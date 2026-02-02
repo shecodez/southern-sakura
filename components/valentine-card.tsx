@@ -19,7 +19,7 @@ export function ValentineCard() {
 
   const constrainPosition = useCallback((x: number, y: number) => {
     const padding = 20;
-    const rightPadding = 30; // Extra padding on right side to prevent overflow
+    const maxDistanceFromCard = 200; // Maximum distance from card center
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
@@ -30,58 +30,148 @@ export function ValentineCard() {
     if (noButtonRef.current) {
       const rect = noButtonRef.current.getBoundingClientRect();
       // Use actual measured width/height, add buffer for safety
-      // Add extra buffer on width to account for text changes and padding
-      buttonWidth = (rect.width || 150) + 20; // Increased buffer for right side
+      buttonWidth = (rect.width || 150) + 20;
       buttonHeight = (rect.height || 50) + 5;
     }
 
-    // Calculate safe bounds - ensure button stays fully visible
-    // For fixed positioning, left position must ensure right edge doesn't go off-screen
-    const minX = padding;
-    const minY = padding;
-    // maxX is the maximum left position where button's right edge stays within viewport
-    // Use rightPadding to ensure button doesn't go off-screen on the right
-    const maxX = Math.max(minX, viewportWidth - buttonWidth - rightPadding);
-    const maxY = Math.max(minY, viewportHeight - buttonHeight - padding - 100); // Extra padding for petal pile
+    // Get card container position
+    let cardCenterX = viewportWidth / 2;
+    let cardCenterY = viewportHeight / 2;
+
+    if (containerRef.current) {
+      const cardRect = containerRef.current.getBoundingClientRect();
+      cardCenterX = cardRect.left + cardRect.width / 2;
+      cardCenterY = cardRect.top + cardRect.height / 2;
+    }
+
+    // Calculate bounds within maxDistanceFromCard of the card center
+    // But also ensure button stays within viewport
+    const minX = Math.max(padding, cardCenterX - maxDistanceFromCard - buttonWidth / 2);
+    const maxX = Math.min(viewportWidth - buttonWidth - padding, cardCenterX + maxDistanceFromCard - buttonWidth / 2);
+    const minY = Math.max(padding, cardCenterY - maxDistanceFromCard - buttonHeight / 2);
+    const maxY = Math.min(viewportHeight - buttonHeight - padding - 100, cardCenterY + maxDistanceFromCard - buttonHeight / 2);
 
     // Constrain position within safe bounds
     const constrainedX = Math.max(minX, Math.min(x, maxX));
     const constrainedY = Math.max(minY, Math.min(y, maxY));
 
-    // Final validation: ensure right edge is definitely on screen
-    const rightEdge = constrainedX + buttonWidth;
-    if (rightEdge > viewportWidth - rightPadding) {
-      return { x: viewportWidth - buttonWidth - rightPadding, y: constrainedY };
+    // Final validation: ensure button stays within maxDistanceFromCard of card center
+    const buttonCenterX = constrainedX + buttonWidth / 2;
+    const buttonCenterY = constrainedY + buttonHeight / 2;
+    const distanceFromCenter = Math.sqrt(
+      Math.pow(buttonCenterX - cardCenterX, 2) +
+      Math.pow(buttonCenterY - cardCenterY, 2)
+    );
+
+    if (distanceFromCenter > maxDistanceFromCard) {
+      // Calculate angle from card center to constrained position
+      const angle = Math.atan2(
+        buttonCenterY - cardCenterY,
+        buttonCenterX - cardCenterX
+      );
+      
+      // Try to place button at maxDistanceFromCard distance from center
+      let newX = cardCenterX + Math.cos(angle) * maxDistanceFromCard - buttonWidth / 2;
+      let newY = cardCenterY + Math.sin(angle) * maxDistanceFromCard - buttonHeight / 2;
+      
+      // If this position is outside viewport, find the closest valid position
+      // that's still within maxDistanceFromCard
+      if (newX < padding || newX > viewportWidth - buttonWidth - padding ||
+          newY < padding || newY > viewportHeight - buttonHeight - padding - 100) {
+        // Try adjusting the angle slightly to find a valid position
+        // This ensures we can still place the button on all sides
+        const validAngles: number[] = [];
+        for (let testAngle = 0; testAngle < Math.PI * 2; testAngle += Math.PI / 8) {
+          const testX = cardCenterX + Math.cos(testAngle) * maxDistanceFromCard - buttonWidth / 2;
+          const testY = cardCenterY + Math.sin(testAngle) * maxDistanceFromCard - buttonHeight / 2;
+          if (testX >= padding && testX <= viewportWidth - buttonWidth - padding &&
+              testY >= padding && testY <= viewportHeight - buttonHeight - padding - 100) {
+            validAngles.push(testAngle);
+          }
+        }
+        
+        // Use the closest valid angle to the desired angle
+        if (validAngles.length > 0) {
+          let closestAngle = validAngles[0];
+          let minDiff = Math.abs(angle - closestAngle);
+          for (const validAngle of validAngles) {
+            const diff = Math.abs(angle - validAngle);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestAngle = validAngle;
+            }
+          }
+          newX = cardCenterX + Math.cos(closestAngle) * maxDistanceFromCard - buttonWidth / 2;
+          newY = cardCenterY + Math.sin(closestAngle) * maxDistanceFromCard - buttonHeight / 2;
+        }
+      }
+      
+      // Final viewport constraint
+      const finalX = Math.max(padding, Math.min(newX, viewportWidth - buttonWidth - padding));
+      const finalY = Math.max(padding, Math.min(newY, viewportHeight - buttonHeight - padding - 100));
+      
+      return { x: finalX, y: finalY };
     }
 
     return { x: constrainedX, y: constrainedY };
   }, []);
 
   const moveNoButton = useCallback(() => {
-    if (!noButtonRef.current) return;
+    if (!noButtonRef.current || !containerRef.current) return;
 
     const padding = 20;
-    const rightPadding = 30; // Match constrainPosition
+    const maxDistanceFromCard = 200; // Maximum distance from card center
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
     // Get actual button dimensions with buffer for safety
     const rect = noButtonRef.current.getBoundingClientRect();
-    const buttonWidth = (rect.width || 150) + 20; // Match constrainPosition buffer
+    const buttonWidth = (rect.width || 150) + 20;
     const buttonHeight = (rect.height || 50) + 5;
 
-    // Calculate safe area for random positioning
+    // Get card container position
+    const cardRect = containerRef.current.getBoundingClientRect();
+    const cardCenterX = cardRect.left + cardRect.width / 2;
+    const cardCenterY = cardRect.top + cardRect.height / 2;
+
+    // Calculate viewport bounds
     const minX = padding;
+    const maxX = viewportWidth - buttonWidth - padding;
     const minY = padding;
-    // Ensure maxX accounts for button width so right edge stays on screen
-    const maxX = Math.max(minX, viewportWidth - buttonWidth - rightPadding);
-    const maxY = Math.max(minY, viewportHeight - buttonHeight - padding - 100);
+    const maxY = viewportHeight - buttonHeight - padding - 100;
 
-    // Generate new position within safe bounds
-    const newX = minX + Math.random() * Math.max(0, maxX - minX);
-    const newY = minY + Math.random() * Math.max(0, maxY - minY);
+    // Generate random positions until we find one that's valid
+    // This ensures equal probability for all directions around the card
+    // Initialize with card center as fallback
+    let newX = cardCenterX - buttonWidth / 2;
+    let newY = cardCenterY - buttonHeight / 2;
+    let attempts = 0;
+    const maxAttempts = 100;
+    let foundValid = false;
 
-    // Constrain to ensure it's within bounds (double-check)
+    while (attempts < maxAttempts && !foundValid) {
+      // Generate random angle (full circle) and distance within maxDistanceFromCard
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.random() * maxDistanceFromCard;
+      
+      // Calculate position relative to card center (button center position)
+      const buttonCenterX = cardCenterX + Math.cos(angle) * distance;
+      const buttonCenterY = cardCenterY + Math.sin(angle) * distance;
+      
+      // Convert to top-left corner position
+      newX = buttonCenterX - buttonWidth / 2;
+      newY = buttonCenterY - buttonHeight / 2;
+      
+      // Check if this position is within viewport bounds
+      if (newX >= minX && newX <= maxX && newY >= minY && newY <= maxY) {
+        foundValid = true;
+      }
+      
+      attempts++;
+    }
+
+    // If we couldn't find a valid position, use constrainPosition to find closest valid one
+    // This handles edge cases where the card is near viewport edges
     const constrained = constrainPosition(newX, newY);
     setNoPosition(constrained);
     setConstrainedPosition(constrained);

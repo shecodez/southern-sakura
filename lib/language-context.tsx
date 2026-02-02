@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, ReactNode } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 
 export type Language = "en" | "ja"; //| "zh";
 
@@ -121,7 +122,32 @@ type LanguageContextType = {
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguage] = useState<Language>("en");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const hasInitialized = useRef(false);
+  
+  // Get language from URL parameter or default to "en"
+  const urlLang = searchParams.get("lang") as Language | null;
+  const language = urlLang && (urlLang === "en" || urlLang === "ja") ? urlLang : "en";
+
+  // Set initial language in URL if not present (only once)
+  useEffect(() => {
+    if (!hasInitialized.current && !urlLang) {
+      hasInitialized.current = true;
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("lang", "en");
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+  }, [urlLang, pathname, router, searchParams]);
+
+  // Function to update URL (which will cause re-render with new language)
+  const setLanguage = (lang: Language) => {
+    // Update URL with new language parameter
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("lang", lang);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
   return (
     <LanguageContext.Provider
